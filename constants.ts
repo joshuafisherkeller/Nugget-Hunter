@@ -1,42 +1,44 @@
 
-
 // Physics Constants
-export const GRAVITY = 0.5; // Slightly heavier feel
+export const GRAVITY = 0.5;
 export const FRICTION = 0.99;
-export const PROJECTILE_SPEED = 22; // Faster, more realistic arrow speed
+export const PROJECTILE_SPEED = 22;
 export const ENEMY_LAUNCH_SPEED_MIN = 12;
 export const ENEMY_LAUNCH_SPEED_MAX = 18;
 export const BOSS_SPEED = 5;
-export const BOSS_HITS_REQUIRED = 15;
-export const SPAWN_RATE_MS = 250; // 0.25 seconds - Fast spawn!
-export const TOTAL_NUGGETS_LEVEL_1 = 15;
-export const LEVEL_DURATION_MS = 30000; // 30 Seconds
+export const BOSS_HITS_REQUIRED = 20; // Increased for epicness
+export const SPAWN_RATE_MS = 250;
+export const TOTAL_NUGGETS_LEVEL_1 = 200; // Updated to 200
+export const WAVE_SIZE = 15;
+export const WAVE_DELAY_MS = 2000;
 
 // Dimensions
 export const PLAYER_SIZE = 80;
-export const NUGGET_SIZE = 70; // Bigger targets
-export const BOSS_SIZE = 200; // Giant Nugget
-export const MINI_NUGGET_SIZE = 45; // Asteroid chunks
+export const NUGGET_SIZE = 70;
+export const BOSS_SIZE = 200;
+export const MINI_NUGGET_SIZE = 45;
 export const PROJECTILE_SIZE = 40;
 export const BOX_WIDTH = 300; 
 export const BOX_HEIGHT = 200;
+export const POWERUP_SIZE = 50;
 
-// Asset URLs - Pointing to where user files would likely be, with fallbacks
+// Asset URLs
 export const ASSET_URLS = {
   LOGO: './nispy_logo.png', 
   BOX: './gettin_frutty_box.jpg', 
   NUGGET: './nugget.png',
-  BOSS: './boss_face.png', // The nugget with the face
+  BOSS: './boss_face.png',
   RIBBON: './ribbon.png',
   BANANA: './banana.png',
   APPLE: './apple.png',
 };
 
-// Colors - More realistic/Modern Palette
+// Colors
 export const COLORS = {
   BACKGROUND_GRADIENT_START: '#1a1c20',
   BACKGROUND_GRADIENT_END: '#000000',
   GROUND: '#111', 
-  CROSSBOW: '#8B4513', // Wood texture color
-  AIM_LINE: 'rgba(255, 0, 0, 0.6)', // Laser sight look
+  CROSSBOW: '#8B4513',
+  AIM_LINE: 'rgba(255, 0, 0, 0.6)',
+  SZECHUAN_GLOW: '#00ccff', // Electric blue for powerup
 };

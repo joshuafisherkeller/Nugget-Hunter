@@ -38,12 +38,38 @@ export interface Enemy extends Entity {
 
 export interface Projectile extends Entity {
   type: ProjectileType;
+  trail: Vector2[]; // For smoke trails
 }
 
 export interface Particle extends Entity {
   life: number;
   maxLife: number;
   color: string;
+  gravity: number;
+}
+
+export interface FloatingText {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  life: number;
+  color: string;
+  vy: number;
+  scale: number;
+}
+
+export interface PowerUp extends Entity {
+  type: 'VESTIGAL';
+  pulse: number;
+}
+
+export interface Star {
+  x: number;
+  y: number;
+  size: number;
+  speed: number;
+  brightness: number;
 }
 
 export interface GameAssets {

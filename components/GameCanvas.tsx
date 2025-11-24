@@ -2,15 +2,16 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { 
   GameState, 
-  Entity, 
   Enemy, 
   Projectile, 
   ProjectileType, 
   GameAssets,
-  Particle
+  Particle,
+  FloatingText,
+  PowerUp,
+  Star
 } from '../types';
 import { 
-  GRAVITY, 
   PROJECTILE_SPEED, 
   ENEMY_LAUNCH_SPEED_MIN, 
   ENEMY_LAUNCH_SPEED_MAX,
@@ -25,7 +26,9 @@ import {
   BOX_HEIGHT,
   PROJECTILE_SIZE,
   TOTAL_NUGGETS_LEVEL_1,
-  LEVEL_DURATION_MS
+  POWERUP_SIZE,
+  WAVE_SIZE,
+  WAVE_DELAY_MS
 } from '../constants';
 import { playSound } from '../services/audioService';
 
@@ -35,7 +38,6 @@ interface GameCanvasProps {
   setGameState: (state: GameState) => void;
   setScore: (score: number) => void;
   setBossHp: (hp: number) => void;
-  setTimeLeft: (time: number) => void;
 }
 
 const GameCanvas: React.FC<GameCanvasProps> = ({ 
@@ -43,90 +45,148 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   gameState, 
   setGameState, 
   setScore,
-  setBossHp,
-  setTimeLeft
+  setBossHp
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // Mutable Game State
+  // Game State Refs
   const scoreRef = useRef(0);
   const projectiles = useRef<Projectile[]>([]);
   const enemies = useRef<Enemy[]>([]);
   const particles = useRef<Particle[]>([]);
-  const playerAngle = useRef(-Math.PI / 2); // Point up by default
+  const floatingTexts = useRef<FloatingText[]>([]);
+  const powerUps = useRef<PowerUp[]>([]);
+  const stars = useRef<Star[]>([]);
+  
+  const playerAngle = useRef(-Math.PI / 2);
   const lastSpawnTime = useRef(0);
-  const spawnedNuggets = useRef(0);
+  const totalSpawnedNuggets = useRef(0);
+  const waveNuggetCount = useRef(0);
+  const isWavePause = useRef(false);
+  const wavePauseStartTime = useRef(0);
+
   const animationFrameId = useRef<number>(0);
   const bossEntity = useRef<Enemy | null>(null);
   const currentAmmo = useRef<ProjectileType>(ProjectileType.APPLE);
-  
-  // Timer Refs
-  const levelStartTime = useRef(0);
-  const lastTimeLeftUpdate = useRef(30);
-  
   const mousePos = useRef({ x: 0, y: 0 });
 
+  // "Juice" Refs
+  const screenShake = useRef({ x: 0, y: 0, intensity: 0 });
+  const comboCount = useRef(0);
+  const comboTimer = useRef(0);
+  const vestigalModeUntil = useRef(0); // Timestamp when powerup ends
+  
+  const [dimensions, setDimensions] = useState({ w: window.innerWidth, h: window.innerHeight });
+
+  // --- Helpers ---
+  const addShake = (intensity: number) => {
+    screenShake.current.intensity = Math.min(screenShake.current.intensity + intensity, 20);
+  };
+
+  const spawnFloatingText = (x: number, y: number, text: string, color: string = '#fff', scale: number = 1) => {
+    floatingTexts.current.push({
+      id: Math.random().toString(),
+      x,
+      y,
+      text,
+      life: 1.0,
+      color,
+      vy: -2,
+      scale
+    });
+  };
+
+  const createExplosion = (x: number, y: number, color: string, count: number = 10, isCrumbs: boolean = false) => {
+    for (let i = 0; i < count; i++) {
+      particles.current.push({
+        id: Math.random().toString(),
+        x,
+        y,
+        vx: (Math.random() - 0.5) * (isCrumbs ? 20 : 15),
+        vy: (Math.random() - 0.5) * (isCrumbs ? 20 : 15),
+        width: isCrumbs ? 2 + Math.random() * 6 : 4 + Math.random() * 4,
+        height: isCrumbs ? 2 + Math.random() * 6 : 4 + Math.random() * 4,
+        rotation: Math.random() * Math.PI,
+        isDead: false,
+        life: 1.0,
+        maxLife: 1.0,
+        color,
+        gravity: isCrumbs ? 0.5 : 0
+      });
+    }
+  };
+
+  // --- Init ---
   const initGame = useCallback(() => {
     projectiles.current = [];
     enemies.current = [];
     particles.current = [];
+    floatingTexts.current = [];
+    powerUps.current = [];
     scoreRef.current = 0;
-    spawnedNuggets.current = 0;
+    totalSpawnedNuggets.current = 0;
+    waveNuggetCount.current = 0;
+    isWavePause.current = false;
     bossEntity.current = null;
     lastSpawnTime.current = 0;
-    lastTimeLeftUpdate.current = 30;
+    comboCount.current = 0;
+    vestigalModeUntil.current = 0;
+    
+    // Create Stars
+    stars.current = [];
+    for(let i=0; i<50; i++) {
+        stars.current.push({
+            x: Math.random() * window.innerWidth,
+            y: Math.random() * window.innerHeight,
+            size: Math.random() * 2 + 1,
+            speed: Math.random() * 0.5 + 0.1,
+            brightness: Math.random()
+        });
+    }
+
     setScore(0);
     setBossHp(BOSS_HITS_REQUIRED);
-    setTimeLeft(30);
-  }, [setScore, setBossHp, setTimeLeft]);
-
-  // Capture level start time when switching to PLAYING
-  useEffect(() => {
-    if (gameState === GameState.PLAYING) {
-        levelStartTime.current = performance.now();
-        lastTimeLeftUpdate.current = Math.floor(LEVEL_DURATION_MS / 1000);
-    }
-  }, [gameState]);
-
-  // Use Window dimensions directly to avoid container collapse issues
-  const [dimensions, setDimensions] = useState({ w: window.innerWidth, h: window.innerHeight });
+  }, [setScore, setBossHp]);
 
   useEffect(() => {
     const handleResize = () => {
-      setDimensions({
-          w: window.innerWidth,
-          h: window.innerHeight
-      });
+      setDimensions({ w: window.innerWidth, h: window.innerHeight });
     };
     window.addEventListener('resize', handleResize);
     handleResize();
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Spawn Logic
+  // --- Spawning ---
   const spawnNugget = (timestamp: number, width: number, height: number) => {
     if (gameState !== GameState.PLAYING) return;
+    if (totalSpawnedNuggets.current >= TOTAL_NUGGETS_LEVEL_1) return;
 
-    // Stop spawning regular nuggets if we reached the limit
-    if (spawnedNuggets.current >= TOTAL_NUGGETS_LEVEL_1) return;
+    // Wave Logic
+    if (isWavePause.current) {
+        if (timestamp - wavePauseStartTime.current > WAVE_DELAY_MS) {
+            isWavePause.current = false;
+            waveNuggetCount.current = 0;
+            spawnFloatingText(width/2, height/2, "NEXT WAVE!", '#ff0000', 2);
+        }
+        return;
+    }
 
     if (timestamp - lastSpawnTime.current > SPAWN_RATE_MS) {
-      // Calculate box position (same as draw logic)
-      const boxY = height - BOX_HEIGHT - 120; // Move up to clear crossbow
+      const boxY = height - BOX_HEIGHT - 120;
       const boxX = width / 2;
-      
-      const angle = (Math.PI / 2) + (Math.random() * 0.4 - 0.2); // Tighter upward cone
+      const angle = (Math.PI / 2) + (Math.random() * 0.4 - 0.2);
       const speed = ENEMY_LAUNCH_SPEED_MIN + Math.random() * (ENEMY_LAUNCH_SPEED_MAX - ENEMY_LAUNCH_SPEED_MIN);
 
       const newNugget: Enemy = {
         id: Math.random().toString(36).substr(2, 9),
         type: 'NUGGET',
         x: boxX,
-        y: boxY + 50, // Start inside box
+        y: boxY + 50,
         width: NUGGET_SIZE,
         height: NUGGET_SIZE,
         vx: Math.cos(angle) * speed * (Math.random() < 0.5 ? 1 : -1),
-        vy: -Math.sin(angle) * speed, // Launch Upwards
+        vy: -Math.sin(angle) * speed,
         rotation: Math.random() * Math.PI,
         isDead: false,
         hp: 1,
@@ -134,9 +194,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       };
 
       enemies.current.push(newNugget);
-      spawnedNuggets.current += 1;
+      totalSpawnedNuggets.current += 1;
+      waveNuggetCount.current += 1;
       lastSpawnTime.current = timestamp;
       playSound('LAUNCH');
+
+      if (waveNuggetCount.current >= WAVE_SIZE) {
+          isWavePause.current = true;
+          wavePauseStartTime.current = timestamp;
+      }
     }
   };
 
@@ -145,7 +211,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       id: 'BOSS',
       type: 'BOSS',
       x: width / 2,
-      y: -BOSS_SIZE, // Start from top
+      y: -BOSS_SIZE,
       width: BOSS_SIZE,
       height: BOSS_SIZE,
       vx: 3,
@@ -159,12 +225,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     enemies.current.push(newBoss);
     setGameState(GameState.BOSS_FIGHT);
     playSound('LAUNCH');
+    addShake(10);
   };
 
   const spawnMiniNuggets = (x: number, y: number) => {
     for (let i = 0; i < 15; i++) {
         const angle = (Math.PI * 2 / 15) * i;
-        const speed = 2 + Math.random() * 2;
+        const speed = 3 + Math.random() * 3;
         const mini: Enemy = {
             id: `MINI_${i}_${Math.random()}`,
             type: 'MINI_NUGGET',
@@ -182,65 +249,101 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         enemies.current.push(mini);
     }
     playSound('LAUNCH');
+    addShake(20);
   };
 
-  const createExplosion = (x: number, y: number, color: string, count: number = 10) => {
-    for (let i = 0; i < count; i++) {
-      particles.current.push({
-        id: Math.random().toString(),
-        x,
-        y,
-        vx: (Math.random() - 0.5) * 15,
-        vy: (Math.random() - 0.5) * 15,
-        width: 4 + Math.random() * 4,
-        height: 4 + Math.random() * 4,
-        rotation: Math.random() * Math.PI,
-        isDead: false,
-        life: 1.0,
-        maxLife: 1.0,
-        color
-      });
-    }
+  const spawnPowerUp = (x: number, y: number) => {
+     powerUps.current.push({
+         id: Math.random().toString(),
+         type: 'VESTIGAL',
+         x,
+         y,
+         vx: (Math.random() - 0.5) * 2,
+         vy: -5, // Pop up
+         width: POWERUP_SIZE,
+         height: POWERUP_SIZE,
+         rotation: 0,
+         isDead: false,
+         pulse: 0
+     });
   };
 
+  // --- Update Loop ---
   const update = useCallback((timestamp: number, width: number, height: number) => {
-    // Timer Logic (Only in PLAYING mode)
-    if (gameState === GameState.PLAYING) {
-        const elapsed = timestamp - levelStartTime.current;
-        const remaining = Math.max(0, LEVEL_DURATION_MS - elapsed);
-        const remainingSeconds = Math.ceil(remaining / 1000);
+    
+    // Shake Decay
+    if (screenShake.current.intensity > 0) {
+        screenShake.current.x = (Math.random() - 0.5) * screenShake.current.intensity;
+        screenShake.current.y = (Math.random() - 0.5) * screenShake.current.intensity;
+        screenShake.current.intensity *= 0.9; // Decay
+    } else {
+        screenShake.current.x = 0;
+        screenShake.current.y = 0;
+    }
 
-        if (remainingSeconds !== lastTimeLeftUpdate.current) {
-            setTimeLeft(remainingSeconds);
-            lastTimeLeftUpdate.current = remainingSeconds;
-        }
-
-        if (remaining <= 0) {
-             // Time expired! Check if nuggets remain
-             if (enemies.current.length > 0 || spawnedNuggets.current < TOTAL_NUGGETS_LEVEL_1) {
-                 setGameState(GameState.GAME_OVER);
-                 playSound('HIT');
-             }
+    // Combo Decay
+    if (comboCount.current > 0) {
+        comboTimer.current -= 16; // Approx ms per frame
+        if (comboTimer.current <= 0) {
+            comboCount.current = 0;
         }
     }
 
-    // Win Condition Check
+    // Stars Background
+    stars.current.forEach(s => {
+        s.y += s.speed;
+        if (s.y > height) s.y = 0;
+    });
+
+    // Win/Boss Logic
     if (gameState === GameState.BOSS_FIGHT && !bossEntity.current && enemies.current.length === 0) {
         setGameState(GameState.WON);
         playSound('WIN');
     }
 
-    // Boss Intro Trigger - Wait until all nuggets are spawned AND destroyed
-    if (gameState === GameState.PLAYING && spawnedNuggets.current >= TOTAL_NUGGETS_LEVEL_1 && enemies.current.length === 0 && !bossEntity.current) {
+    if (gameState === GameState.PLAYING && totalSpawnedNuggets.current >= TOTAL_NUGGETS_LEVEL_1 && enemies.current.length === 0 && !bossEntity.current) {
        setGameState(GameState.BOSS_INTRO);
        setTimeout(() => spawnBoss(width, height), 2500); 
     }
+
+    // Powerups
+    powerUps.current.forEach(p => {
+        p.vy += 0.2; // Gravity
+        p.x += p.vx;
+        p.y += p.vy;
+        p.rotation += 0.05;
+        p.pulse += 0.1;
+        
+        if (p.y > height) p.isDead = true;
+        
+        // Check collision with projectile (shoot to collect)
+        projectiles.current.forEach(proj => {
+            if (proj.isDead || p.isDead) return;
+            const dx = proj.x - p.x;
+            const dy = proj.y - p.y;
+            if (Math.sqrt(dx*dx + dy*dy) < (p.width + proj.width)/2) {
+                p.isDead = true;
+                proj.isDead = true;
+                // Activate Vestigal Mode
+                vestigalModeUntil.current = timestamp + 5000;
+                spawnFloatingText(p.x, p.y, "VESTIGAL SISTER POWER!", COLORS.SZECHUAN_GLOW, 2);
+                createExplosion(p.x, p.y, COLORS.SZECHUAN_GLOW, 20);
+                playSound('WIN'); // Reuse happy sound
+                addShake(10);
+            }
+        });
+    });
 
     // Projectiles
     projectiles.current.forEach(p => {
       p.x += p.vx;
       p.y += p.vy;
-      p.rotation = Math.atan2(p.vy, p.vx); // Rotate to follow trajectory
+      p.rotation = Math.atan2(p.vy, p.vx);
+      
+      // Add Trail
+      p.trail.push({x: p.x, y: p.y});
+      if (p.trail.length > 5) p.trail.shift();
+
       if (p.x < 0 || p.x > width || p.y < 0 || p.y > height) {
         p.isDead = true;
       }
@@ -251,59 +354,24 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       e.x += e.vx;
       e.y += e.vy;
       
-      if (e.type === 'NUGGET') {
-          // New "Floating" Physics
-          e.rotation += 0.05;
-
-          // Drag effect - slow down initial launch to a float speed
-          const speed = Math.sqrt(e.vx*e.vx + e.vy*e.vy);
-          if (speed > 4) {
-              e.vx *= 0.96;
-              e.vy *= 0.96;
+      if (e.type === 'NUGGET' || e.type === 'MINI_NUGGET' || e.type === 'BOSS') {
+          // Physics updates
+          if (e.type === 'NUGGET') {
+              e.rotation += 0.05;
+              const speed = Math.sqrt(e.vx*e.vx + e.vy*e.vy);
+              if (speed > 4) { e.vx *= 0.96; e.vy *= 0.96; }
           }
-
-          // Bounce off walls (Asteroid style)
+          if (e.type === 'BOSS') { e.rotation += 0.01; }
+          
+          // Screen Bounds Bounce
           if (e.x < e.width/2 || e.x > width - e.width/2) {
              e.vx *= -1;
              e.x = Math.max(e.width/2, Math.min(width - e.width/2, e.x));
           }
-          if (e.y < e.height/2 || e.y > height - 100) { 
+          if (e.y < e.height/2 || e.y > height) { 
              e.vy *= -1;
-             e.y = Math.max(e.height/2, Math.min(height - 100, e.y));
+             e.y = Math.max(e.height/2, Math.min(height, e.y));
           }
-
-      } else if (e.type === 'BOSS') {
-          // Boss Logic: Float and Bounce
-          e.rotation += 0.01;
-          
-          // Bounce off walls
-          if (e.x < e.width/2 || e.x > width - e.width/2) {
-              e.vx *= -1;
-              e.x = Math.max(e.width/2, Math.min(width - e.width/2, e.x));
-          }
-          if (e.y < e.height/2 || e.y > height - e.height/2 - 100) { // Keep above player
-              e.vy *= -1;
-              e.y = Math.max(e.height/2, Math.min(height - e.height/2 - 100, e.y));
-          }
-
-          // Randomly change direction slightly for natural float
-          if (Math.random() < 0.02) {
-              e.vx += (Math.random() - 0.5) * 2;
-              e.vy += (Math.random() - 0.5) * 2;
-              // Clamp speed
-              const speed = Math.sqrt(e.vx*e.vx + e.vy*e.vy);
-              if (speed > BOSS_SPEED) {
-                  e.vx = (e.vx / speed) * BOSS_SPEED;
-                  e.vy = (e.vy / speed) * BOSS_SPEED;
-              }
-          }
-      } else if (e.type === 'MINI_NUGGET') {
-          // Mini Nugget Logic: Float slowly like asteroids
-          e.rotation += 0.03;
-          
-          // Bounce
-          if (e.x < 0 || e.x > width) e.vx *= -1;
-          if (e.y < 0 || e.y > height) e.vy *= -1;
       }
     });
 
@@ -311,10 +379,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     particles.current.forEach(p => {
         p.x += p.vx;
         p.y += p.vy;
-        p.vy += 0.2; // Particle gravity
-        p.life -= 0.03;
+        p.vy += p.gravity;
+        p.life -= 0.02;
         if (p.life <= 0) p.isDead = true;
     });
+
+    // Floating Text
+    floatingTexts.current.forEach(t => {
+        t.y += t.vy;
+        t.vy *= 0.9; // Slow down ascent
+        t.life -= 0.02;
+    });
+    floatingTexts.current = floatingTexts.current.filter(t => t.life > 0);
 
     // Collisions
     projectiles.current.forEach(p => {
@@ -332,22 +408,37 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           p.isDead = true;
           e.hp -= 1;
           
+          // Hit Logic
+          addShake(2);
+          comboCount.current += 1;
+          comboTimer.current = 2000; // 2 seconds to keep combo
+          const scoreVal = 100 * comboCount.current;
+          
+          spawnFloatingText(e.x, e.y, `${scoreVal}`, '#fff', 1 + (comboCount.current * 0.1));
+          if (comboCount.current > 2) spawnFloatingText(e.x, e.y - 20, `${comboCount.current}x COMBO!`, '#ffff00', 1.2);
+
           if (e.type === 'BOSS') {
             playSound('BOSS_HIT');
             createExplosion(p.x, p.y, '#FF0000', 5);
           } else {
             playSound('HIT');
-            createExplosion(e.x, e.y, '#D4AF37', 15);
+            createExplosion(e.x, e.y, '#D4AF37', 8, true); // Crumbs
           }
 
           if (e.hp <= 0) {
             e.isDead = true;
+            addShake(5);
+            
+            // Chance to drop powerup (if not boss)
+            if (e.type !== 'BOSS' && Math.random() < 0.1) {
+                spawnPowerUp(e.x, e.y);
+            }
+
             if (e.type === 'BOSS') {
-                // BOSS DEFEATED - Split into minis
                 bossEntity.current = null;
-                createExplosion(e.x, e.y, '#FFD700', 50);
+                createExplosion(e.x, e.y, '#FFD700', 100);
                 spawnMiniNuggets(e.x, e.y);
-                // Don't set WON yet
+                spawnFloatingText(e.x, e.y, "CRUMBLING!", '#ff0000', 3);
             } else if (e.type === 'NUGGET') {
                scoreRef.current += 1;
                setScore(scoreRef.current);
@@ -362,114 +453,95 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     projectiles.current = projectiles.current.filter(p => !p.isDead);
     enemies.current = enemies.current.filter(e => !e.isDead);
     particles.current = particles.current.filter(p => !p.isDead);
+    powerUps.current = powerUps.current.filter(p => !p.isDead);
 
     spawnNugget(timestamp, width, height);
 
-  }, [gameState, setGameState, setScore, setBossHp, setTimeLeft]);
+  }, [gameState, setGameState, setScore, setBossHp]);
 
+  // --- Draw Loop ---
   const draw = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // Realistic Background
-    const gradient = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, width);
-    gradient.addColorStop(0, COLORS.BACKGROUND_GRADIENT_START);
-    gradient.addColorStop(1, COLORS.BACKGROUND_GRADIENT_END);
-    ctx.fillStyle = gradient;
+    // 1. Clear & Background
+    ctx.fillStyle = COLORS.BACKGROUND_GRADIENT_START;
     ctx.fillRect(0, 0, width, height);
 
-    // Draw Box (Spawn Point) - Adjusted position to NOT be blocked by crossbow
+    // Stars
+    ctx.fillStyle = 'white';
+    stars.current.forEach(s => {
+        ctx.globalAlpha = s.brightness * 0.8;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI*2);
+        ctx.fill();
+    });
+    ctx.globalAlpha = 1.0;
+
+    // Apply Screen Shake
+    ctx.save();
+    ctx.translate(screenShake.current.x, screenShake.current.y);
+
+    // 2. Draw Box (Behind everything)
     const boxX = (width/2) - (BOX_WIDTH/2);
-    // Move box up so it sits "behind" the player in perspective
     const boxY = height - BOX_HEIGHT - 120; 
 
-    if (assets?.box && assets.box.width >= 50) { // Check if real image loaded
+    if (assets?.box && assets.box.width >= 50) {
         ctx.drawImage(assets.box, boxX, boxY, BOX_WIDTH, BOX_HEIGHT);
     } else {
-        // Fallback: Code-drawn realistic box
-        ctx.save();
-        
-        // Shadow
-        ctx.shadowColor = 'black';
-        ctx.shadowBlur = 30;
-        
-        // Box shape (Trapezoid for 3D effect)
+        // Procedural Box
         ctx.beginPath();
-        ctx.moveTo(boxX + 10, boxY); // Top Left
-        ctx.lineTo(boxX + BOX_WIDTH - 10, boxY); // Top Right
-        ctx.lineTo(boxX + BOX_WIDTH, boxY + BOX_HEIGHT); // Bottom Right
-        ctx.lineTo(boxX, boxY + BOX_HEIGHT); // Bottom Left
-        ctx.closePath();
-        
-        // Cardboard/Wood Gradient
-        const boxGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + BOX_HEIGHT);
-        boxGrad.addColorStop(0, '#d3a87c'); // Light cardboard
-        boxGrad.addColorStop(1, '#a07a53'); // Darker bottom
-        ctx.fillStyle = boxGrad;
+        ctx.rect(boxX, boxY, BOX_WIDTH, BOX_HEIGHT);
+        ctx.fillStyle = '#a07a53';
         ctx.fill();
-        
-        // Outline
-        ctx.strokeStyle = '#8d6e4b';
+        ctx.strokeStyle = '#6d4c41';
         ctx.lineWidth = 4;
         ctx.stroke();
-
-        ctx.shadowBlur = 0;
-
-        // Branding Background
-        ctx.fillStyle = '#c0392b'; // Red brand color
-        ctx.beginPath();
-        ctx.rect(boxX + 20, boxY + 50, BOX_WIDTH - 40, 80);
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
         
-        // Text
+        // Branding
+        ctx.fillStyle = '#c0392b';
+        ctx.fillRect(boxX + 20, boxY + 50, BOX_WIDTH - 40, 80);
         ctx.fillStyle = 'white';
         ctx.textAlign = 'center';
         
-        ctx.font = 'bold 24px Arial';
-        ctx.fillText("Gettin'", width/2, boxY + 80);
+        // Small "GETTIN"
+        ctx.font = 'bold 15px "Press Start 2P"';
+        ctx.fillText("GETTIN", width/2, boxY + 80);
         
-        ctx.font = 'bold italic 45px "Press Start 2P", sans-serif';
-        ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        ctx.shadowOffsetX = 2;
-        ctx.shadowOffsetY = 2;
-        ctx.fillText("FRUTTY", width/2, boxY + 120);
-        
-        ctx.restore();
+        // Large "FRUTTY"
+        ctx.font = 'bold 30px "Press Start 2P"';
+        ctx.fillText("FRUTTY", width/2, boxY + 115);
     }
 
-    // Draw Player (Modern Crossbow)
+    // 3. Draw Player
     const px = width / 2;
     const py = height - 50;
-    
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(playerAngle.current);
     
     // Laser Sight
     ctx.beginPath();
     ctx.strokeStyle = COLORS.AIM_LINE;
     ctx.lineWidth = 2;
-    ctx.moveTo(30, 0);
-    ctx.lineTo(1000, 0);
+    ctx.moveTo(px, py);
+    const aimX = px + Math.cos(playerAngle.current) * 2000;
+    const aimY = py + Math.sin(playerAngle.current) * 2000;
+    ctx.lineTo(aimX, aimY);
     ctx.stroke();
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(playerAngle.current);
     
-    // Crossbow Render
-    ctx.shadowColor = 'black';
-    ctx.shadowBlur = 10;
+    // Crossbow Model
+    const isVestigal = performance.now() < vestigalModeUntil.current;
     
-    // Stock
+    ctx.shadowColor = isVestigal ? COLORS.SZECHUAN_GLOW : 'black';
+    ctx.shadowBlur = isVestigal ? 20 : 10;
+    
     ctx.fillStyle = '#5d4037';
     ctx.fillRect(-20, -10, 80, 20);
-    
-    // Limbs
     ctx.beginPath();
-    ctx.strokeStyle = '#2c3e50';
+    ctx.strokeStyle = isVestigal ? COLORS.SZECHUAN_GLOW : '#2c3e50';
     ctx.lineWidth = 6;
     ctx.moveTo(40, -60);
     ctx.quadraticCurveTo(20, 0, 40, 60);
     ctx.stroke();
-    
-    // String
     ctx.beginPath();
     ctx.strokeStyle = '#bdc3c7';
     ctx.lineWidth = 1;
@@ -477,208 +549,190 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.lineTo(0, 0);
     ctx.lineTo(40, 60);
     ctx.stroke();
-
     ctx.restore();
 
-    // Draw Enemies (Realistic rendering)
+    // 4. Draw Projectiles
+    projectiles.current.forEach(p => {
+        // Trails
+        if (p.trail.length > 1) {
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.lineWidth = p.width / 2;
+            ctx.lineCap = 'round';
+            ctx.moveTo(p.trail[0].x, p.trail[0].y);
+            for(let i=1; i<p.trail.length; i++) {
+                ctx.lineTo(p.trail[i].x, p.trail[i].y);
+            }
+            ctx.stroke();
+        }
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        
+        // Glow if Vestigal
+        if (isVestigal) {
+            ctx.shadowColor = COLORS.SZECHUAN_GLOW;
+            ctx.shadowBlur = 15;
+        }
+
+        // Draw Fruit
+        ctx.fillStyle = p.type === ProjectileType.APPLE ? '#e74c3c' : '#f1c40f';
+        ctx.beginPath();
+        ctx.arc(0, 0, p.width/2, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+    });
+
+    // 5. PowerUps
+    powerUps.current.forEach(p => {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        const scale = 1 + Math.sin(p.pulse) * 0.1;
+        ctx.scale(scale, scale);
+        
+        ctx.shadowColor = COLORS.SZECHUAN_GLOW;
+        ctx.shadowBlur = 20;
+        
+        ctx.fillStyle = COLORS.SZECHUAN_GLOW;
+        ctx.beginPath();
+        ctx.rect(-15, -20, 30, 40); // Packet shape
+        ctx.fill();
+        
+        ctx.fillStyle = 'white';
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('VSTGL', 0, 5);
+        
+        ctx.restore();
+    });
+
+    // 6. Draw Enemies
     enemies.current.forEach(e => {
         ctx.save();
         ctx.translate(e.x, e.y);
         ctx.rotate(e.rotation);
         
-        // Default Drop shadow
+        // Hit Flash
         ctx.shadowColor = 'rgba(0,0,0,0.5)';
         ctx.shadowBlur = 10;
         ctx.shadowOffsetY = 10;
 
-        // Boss Interaction Highlight
+        // Procedural Gold Nugget
+        const nuggetGrad = ctx.createRadialGradient(-5, -5, 5, 0, 0, e.width/2);
+        nuggetGrad.addColorStop(0, '#e1c699'); 
+        nuggetGrad.addColorStop(0.4, '#d4af37'); 
+        nuggetGrad.addColorStop(1, '#aa8830'); 
+        ctx.fillStyle = nuggetGrad;
+
         if (e.type === 'BOSS') {
-            let dangerIntensity = 0;
-            // Check for incoming projectiles to create anticipation glow
+            // Boss Glow
             projectiles.current.forEach(p => {
-                if (p.isDead) return;
-                const dx = p.x - e.x;
-                const dy = p.y - e.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                const warningDist = e.width / 2 + 200; // Warning radius
-                
-                if (dist < warningDist) {
-                    // Intensity 0 to 1 based on proximity
-                    const intensity = 1 - (dist / warningDist);
-                    if (intensity > dangerIntensity) dangerIntensity = intensity;
+                const dist = Math.sqrt((p.x-e.x)**2 + (p.y-e.y)**2);
+                if (dist < 300) {
+                     ctx.shadowColor = 'red';
+                     ctx.shadowBlur = 30 * (1 - dist/300);
                 }
             });
+            
+            ctx.beginPath();
+            ctx.arc(0, 0, e.width/2, 0, Math.PI*2);
+            ctx.fill();
+            
+            // Mega Pierre Face
+            // Eyes (Angry Slanted)
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            // Left Eye
+            ctx.moveTo(-45, -25);
+            ctx.lineTo(-15, -15);
+            ctx.lineTo(-30, -5);
+            ctx.fill();
+            // Right Eye
+            ctx.moveTo(45, -25);
+            ctx.lineTo(15, -15);
+            ctx.lineTo(30, -5);
+            ctx.fill();
 
-            if (dangerIntensity > 0) {
-                // Add reddish-gold glow that intensifies
-                ctx.shadowColor = `rgba(255, 60, 0, ${0.4 + dangerIntensity * 0.6})`;
-                ctx.shadowBlur = 20 + (dangerIntensity * 40);
-                ctx.shadowOffsetY = 0;
-            }
-        }
+            // Eyebrows (Thick)
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(-50, -35);
+            ctx.lineTo(-10, -25);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(50, -35);
+            ctx.lineTo(10, -25);
+            ctx.stroke();
 
-        if (e.type === 'BOSS' && assets?.boss && assets.boss.width >= 50) {
-             // If boss asset loaded
-            ctx.drawImage(assets.boss, -e.width/2, -e.height/2, e.width, e.height);
-        } else if ((e.type === 'NUGGET' || e.type === 'MINI_NUGGET') && assets?.nugget && assets.nugget.width >= 50) {
-             // If nugget asset loaded
-            ctx.drawImage(assets.nugget, -e.width/2, -e.height/2, e.width, e.height);
+            // Mouth (Angry Frown)
+            ctx.beginPath();
+            ctx.arc(0, 50, 30, Math.PI + 0.5, 2 * Math.PI - 0.5);
+            ctx.lineWidth = 5;
+            ctx.stroke();
+
+            // Goatee
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.moveTo(0, 50);
+            ctx.lineTo(-10, 90);
+            ctx.lineTo(10, 90);
+            ctx.fill();
+
         } else {
-            // High fidelity fallback drawing
-            if (e.type === 'BOSS') {
-                // Giant Golden Nugget Boss with Shading
-                const bossGrad = ctx.createRadialGradient(-10, -10, 20, 0, 0, e.width/1.5);
-                bossGrad.addColorStop(0, '#ffd700'); // Highlight
-                bossGrad.addColorStop(0.5, '#daa520'); // Gold
-                bossGrad.addColorStop(1, '#b8860b'); // Shadow
-                ctx.fillStyle = bossGrad;
-                
-                ctx.beginPath();
-                const r = e.width/2;
-                ctx.moveTo(r, 0);
-                for(let i=0; i<8; i++) {
-                    const angle = (i/8) * Math.PI * 2;
-                    const rad = r + (Math.sin(i*3) * 10);
-                    ctx.lineTo(Math.cos(angle)*rad, Math.sin(angle)*rad);
-                }
-                ctx.closePath();
-                ctx.fill();
-                
-                // Face
-                ctx.shadowBlur = 0;
-                ctx.shadowOffsetY = 0;
-                ctx.fillStyle = '#222';
-                ctx.beginPath();
-                ctx.arc(-30, -20, 15, 0, Math.PI*2); // Eye L
-                ctx.arc(30, -20, 15, 0, Math.PI*2); // Eye R
-                ctx.fill();
-                
-                // Eyebrows (Angry)
-                ctx.strokeStyle = '#222';
-                ctx.lineWidth = 8;
-                ctx.beginPath();
-                ctx.moveTo(-50, -40); ctx.lineTo(-10, -25);
-                ctx.moveTo(50, -40); ctx.lineTo(10, -25);
-                ctx.stroke();
-
-                // Mouth
-                ctx.beginPath();
-                ctx.arc(0, 30, 40, 0.2, Math.PI - 0.2, false);
-                ctx.lineWidth = 5;
-                ctx.stroke();
-            } else {
-                // Realistic Nugget shape (lumpy 3D)
-                // Gradient for roundness
-                const nuggetGrad = ctx.createRadialGradient(-5, -5, 5, 0, 0, e.width/2);
-                nuggetGrad.addColorStop(0, '#e1c699'); // Highlight (Breading light)
-                nuggetGrad.addColorStop(0.4, '#d4af37'); // Golden
-                nuggetGrad.addColorStop(1, '#aa8830'); // Darker crisp
-                
-                if (e.type === 'MINI_NUGGET') {
-                     // Slightly redder/darker for cooked chunks
-                     nuggetGrad.addColorStop(0, '#e6cdac'); 
-                     nuggetGrad.addColorStop(1, '#a0522d');
-                }
-                
-                ctx.fillStyle = nuggetGrad;
-
-                ctx.beginPath();
-                const r = e.width/2;
-                ctx.moveTo(r, 0);
-                for(let i=0; i<7; i++) {
-                    const angle = (i/7) * Math.PI * 2;
-                    const rad = r + (Math.random() * 6 - 3); // Lumpy
-                    ctx.lineTo(Math.cos(angle)*rad, Math.sin(angle)*rad);
-                }
-                ctx.closePath();
-                ctx.fill();
-                
-                // Texture details (pepper flakes / breading shadow)
-                ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
-                for(let i=0; i<3; i++) {
-                    ctx.beginPath();
-                    const tx = (Math.random() - 0.5) * e.width * 0.6;
-                    const ty = (Math.random() - 0.5) * e.height * 0.6;
-                    ctx.arc(tx, ty, 2, 0, Math.PI*2);
-                    ctx.fill();
-                }
+             // Lumpy Nugget
+            ctx.beginPath();
+            const r = e.width/2;
+            for(let i=0; i<7; i++) {
+                const angle = (i/7) * Math.PI * 2;
+                const rad = r + (Math.sin(i*132) * 5); 
+                ctx.lineTo(Math.cos(angle)*rad, Math.sin(angle)*rad);
             }
+            ctx.fill();
         }
+
         ctx.restore();
     });
 
-    // Draw Projectiles
-    projectiles.current.forEach(p => {
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rotation);
-        
-        let img = assets?.apple;
-        if (p.type === ProjectileType.BANANA) img = assets?.banana;
-
-        if (img && img.width > 10) {
-            // Draw sprite rotated 90deg to face direction of travel if needed, assume sprite is upright
-            ctx.drawImage(img, -p.width/2, -p.height/2, p.width, p.height);
-        } else {
-            // Draw realistic fruit fallback
-            if (p.type === ProjectileType.APPLE) {
-                ctx.fillStyle = '#e74c3c'; // Red Apple
-                ctx.beginPath();
-                ctx.arc(0, 0, p.width/2, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Shine
-                ctx.fillStyle = 'rgba(255,255,255,0.4)';
-                ctx.beginPath();
-                ctx.arc(-5, -5, 5, 0, Math.PI*2);
-                ctx.fill();
-
-                // Leaf
-                ctx.fillStyle = '#2ecc71';
-                ctx.beginPath();
-                ctx.ellipse(0, -15, 5, 10, Math.PI/4, 0, Math.PI*2);
-                ctx.fill();
-            } else {
-                // Banana
-                ctx.fillStyle = '#f1c40f';
-                ctx.beginPath();
-                ctx.ellipse(0, 0, p.width/2, p.height/4, 0, 0, Math.PI*2);
-                ctx.fill();
-                // Ends
-                ctx.fillStyle = '#7f8c8d';
-                ctx.beginPath();
-                ctx.arc(-p.width/2, 0, 3, 0, Math.PI*2);
-                ctx.fill();
-            }
-        }
-        ctx.restore();
-    });
-
-    // Draw Particles
+    // 7. Particles
     particles.current.forEach(p => {
         ctx.globalAlpha = p.life;
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.width/2, 0, Math.PI*2);
         ctx.fill();
-        ctx.globalAlpha = 1.0;
     });
+    ctx.globalAlpha = 1.0;
+
+    // 8. Floating Text
+    floatingTexts.current.forEach(t => {
+        ctx.save();
+        ctx.translate(t.x, t.y);
+        ctx.scale(t.scale, t.scale);
+        ctx.globalAlpha = t.life;
+        ctx.fillStyle = t.color;
+        ctx.shadowColor = 'black';
+        ctx.shadowBlur = 2;
+        ctx.font = "bold 24px 'Press Start 2P'";
+        ctx.fillText(t.text, 0, 0);
+        ctx.restore();
+    });
+
+    ctx.restore(); // End Shake
 
   }, [assets]);
 
-  // Main Loop
+  // --- Loop ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = dimensions.w * dpr;
-    canvas.height = dimensions.h * dpr;
-    ctx.scale(dpr, dpr);
-    canvas.style.width = `${dimensions.w}px`;
-    canvas.style.height = `${dimensions.h}px`;
+    canvas.width = dimensions.w;
+    canvas.height = dimensions.h;
 
     const loop = (timestamp: number) => {
       update(timestamp, dimensions.w, dimensions.h);
@@ -690,12 +744,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     return () => cancelAnimationFrame(animationFrameId.current);
   }, [dimensions, draw, update]);
 
-  // Init
+  // --- Inputs ---
   useEffect(() => {
     if (gameState === GameState.START) initGame();
   }, [gameState, initGame]);
 
-  // Inputs
   const handleInputMove = (clientX: number, clientY: number) => {
     mousePos.current = { x: clientX, y: clientY };
     const px = dimensions.w / 2;
@@ -703,30 +756,41 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     playerAngle.current = Math.atan2(clientY - py, clientX - px);
   };
 
-  const handleShoot = () => {
-    if (gameState !== GameState.PLAYING && gameState !== GameState.BOSS_FIGHT) return;
-
+  const fireProjectile = (angle: number, speedMult: number = 1) => {
     const px = dimensions.w / 2;
     const py = dimensions.h - 50;
-    const angle = playerAngle.current;
-
-    const newProjectile: Projectile = {
+    
+    projectiles.current.push({
         id: Math.random().toString(),
         type: currentAmmo.current,
         x: px,
         y: py,
         width: PROJECTILE_SIZE,
         height: PROJECTILE_SIZE,
-        vx: Math.cos(angle) * PROJECTILE_SPEED,
-        vy: Math.sin(angle) * PROJECTILE_SPEED,
+        vx: Math.cos(angle) * PROJECTILE_SPEED * speedMult,
+        vy: Math.sin(angle) * PROJECTILE_SPEED * speedMult,
         rotation: angle,
-        isDead: false
-    };
+        isDead: false,
+        trail: []
+    });
+  };
 
-    projectiles.current.push(newProjectile);
+  const handleShoot = () => {
+    if (gameState !== GameState.PLAYING && gameState !== GameState.BOSS_FIGHT) return;
+
+    const angle = playerAngle.current;
+    addShake(5);
     playSound('SHOOT');
+
+    if (performance.now() < vestigalModeUntil.current) {
+        // VESTIGAL MODE: TRIPLE SHOT
+        fireProjectile(angle);
+        fireProjectile(angle - 0.2);
+        fireProjectile(angle + 0.2);
+    } else {
+        fireProjectile(angle);
+    }
     
-    // Auto-swap ammo
     currentAmmo.current = currentAmmo.current === ProjectileType.APPLE ? ProjectileType.BANANA : ProjectileType.APPLE;
   };
 
