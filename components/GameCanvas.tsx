@@ -479,9 +479,55 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.save();
     ctx.translate(screenShake.current.x, screenShake.current.y);
 
+    const isVestigal = performance.now() < vestigalModeUntil.current;
+
     // 2. Draw Box (Behind everything)
     const boxX = (width/2) - (BOX_WIDTH/2);
     const boxY = height - BOX_HEIGHT - 120; 
+
+    // Vestigal Indicator (Sister)
+    if (isVestigal) {
+        // Status Text
+        ctx.font = 'bold 15px "Press Start 2P"';
+        ctx.fillStyle = COLORS.SZECHUAN_GLOW;
+        ctx.textAlign = 'center';
+        ctx.shadowColor = COLORS.SZECHUAN_GLOW;
+        ctx.shadowBlur = 10;
+        ctx.fillText("VESTIGAL SISTER MODE ACTIVE", width/2, height - 20);
+        ctx.shadowBlur = 0;
+
+        // Draw "Sister" Icon (Procedural)
+        const sisterX = boxX - 60; // Left of box
+        const sisterY = boxY + BOX_HEIGHT - 40;
+
+        ctx.save();
+        ctx.translate(sisterX, sisterY);
+        // Face
+        ctx.fillStyle = '#ffccaa';
+        ctx.beginPath();
+        ctx.arc(0, 0, 25, 0, Math.PI*2);
+        ctx.fill();
+        // Hair (Long)
+        ctx.fillStyle = '#5d4037';
+        ctx.beginPath();
+        ctx.arc(0, -5, 27, Math.PI, 0); 
+        ctx.lineTo(27, 40);
+        ctx.lineTo(-27, 40);
+        ctx.fill();
+        // Eyes
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(-8, 0, 3, 0, Math.PI*2);
+        ctx.arc(8, 0, 3, 0, Math.PI*2);
+        ctx.fill();
+        // Smile
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#d35400';
+        ctx.beginPath();
+        ctx.arc(0, 5, 10, 0, Math.PI);
+        ctx.stroke();
+        ctx.restore();
+    }
 
     if (assets?.box && assets.box.width >= 50) {
         ctx.drawImage(assets.box, boxX, boxY, BOX_WIDTH, BOX_HEIGHT);
@@ -529,8 +575,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.rotate(playerAngle.current);
     
     // Crossbow Model
-    const isVestigal = performance.now() < vestigalModeUntil.current;
-    
     ctx.shadowColor = isVestigal ? COLORS.SZECHUAN_GLOW : 'black';
     ctx.shadowBlur = isVestigal ? 20 : 10;
     
@@ -715,7 +759,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.fillStyle = t.color;
         ctx.shadowColor = 'black';
         ctx.shadowBlur = 2;
-        ctx.font = "bold 24px 'Press Start 2P'";
+        // Reduced font size by 50% (24px -> 12px)
+        ctx.font = "bold 12px 'Press Start 2P'";
         ctx.fillText(t.text, 0, 0);
         ctx.restore();
     });
