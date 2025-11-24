@@ -6,8 +6,11 @@
     <title>Nispy: Gettin' Frutty</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      body {
+      html, body, #root {
+        height: 100%;
+        width: 100%;
         margin: 0;
+        padding: 0;
         overflow: hidden;
         background-color: #1a1a1a;
         touch-action: none; /* Prevent browser zooming/scrolling on mobile */
@@ -18,9 +21,9 @@
   <script type="importmap">
 {
   "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "vite": "https://aistudiocdn.com/vite@^7.2.4",
     "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1"
   }

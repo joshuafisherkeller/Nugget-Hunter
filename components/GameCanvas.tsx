@@ -44,8 +44,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   setBossHp 
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
+  
   // Mutable Game State
   const scoreRef = useRef(0);
   const projectiles = useRef<Projectile[]>([]);
@@ -72,18 +71,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     setBossHp(BOSS_HITS_REQUIRED);
   }, [setScore, setBossHp]);
 
+  // Use Window dimensions directly to avoid container collapse issues
   const [dimensions, setDimensions] = useState({ w: window.innerWidth, h: window.innerHeight });
 
   useEffect(() => {
     const handleResize = () => {
-      if (containerRef.current) {
-        setDimensions({
-            w: containerRef.current.clientWidth,
-            h: containerRef.current.clientHeight
-        });
-      }
+      setDimensions({
+          w: window.innerWidth,
+          h: window.innerHeight
+      });
     };
     window.addEventListener('resize', handleResize);
+    // Force initial resize to catch any loading shifts
     handleResize();
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -345,7 +344,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Move box up so it sits "behind" the player in perspective
     const boxY = height - BOX_HEIGHT - 120; 
 
-    if (assets?.box && assets.box.width > 50) { // Check if real image loaded
+    if (assets?.box && assets.box.width >= 50) { // Check if real image loaded
         ctx.drawImage(assets.box, boxX, boxY, BOX_WIDTH, BOX_HEIGHT);
     } else {
         // Fallback: Code-drawn realistic box
@@ -436,10 +435,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.shadowBlur = 10;
         ctx.shadowOffsetY = 10;
 
-        if (e.type === 'BOSS' && assets?.boss && assets.boss.width > 50) {
+        if (e.type === 'BOSS' && assets?.boss && assets.boss.width >= 50) {
              // If boss asset loaded
             ctx.drawImage(assets.boss, -e.width/2, -e.height/2, e.width, e.height);
-        } else if ((e.type === 'NUGGET' || e.type === 'MINI_NUGGET') && assets?.nugget && assets.nugget.width > 50) {
+        } else if ((e.type === 'NUGGET' || e.type === 'MINI_NUGGET') && assets?.nugget && assets.nugget.width >= 50) {
              // If nugget asset loaded
             ctx.drawImage(assets.nugget, -e.width/2, -e.height/2, e.width, e.height);
         } else {
@@ -622,14 +621,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   return (
     <div 
-      ref={containerRef} 
-      className="w-full h-full relative"
+      className="w-full h-full relative overflow-hidden"
       onTouchMove={(e) => handleInputMove(e.touches[0].clientX, e.touches[0].clientY)}
       onMouseMove={(e) => handleInputMove(e.clientX, e.clientY)}
       onMouseDown={handleShoot}
       onTouchStart={handleShoot}
     >
-      <canvas ref={canvasRef} className="block cursor-crosshair" />
+      <canvas 
+        ref={canvasRef} 
+        className="block cursor-crosshair absolute top-0 left-0 touch-none" 
+      />
     </div>
   );
 };
