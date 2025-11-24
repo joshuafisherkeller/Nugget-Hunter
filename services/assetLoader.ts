@@ -1,3 +1,4 @@
+
 import { GameAssets } from '../types';
 import { ASSET_URLS } from '../constants';
 
@@ -22,17 +23,14 @@ export const loadAssets = (): Promise<GameAssets> => {
         checkDone();
       };
       img.onerror = () => {
-        console.warn(`Failed to load asset: ${src}, using fallback.`);
-        // Create a dummy canvas as fallback so game doesn't crash
+        console.warn(`Failed to load asset: ${src}, falling back to procedural generation.`);
+        // Create a tiny 1x1 empty canvas.
+        // This ensures assets[key] is not null (satisfying types),
+        // but fails the (width >= 50) checks in GameCanvas, triggering the procedural drawing.
         const canvas = document.createElement('canvas');
-        canvas.width = 50;
-        canvas.height = 50;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.fillStyle = 'red';
-            ctx.fillRect(0,0,50,50);
-        }
-        assets[key] = canvas as unknown as HTMLImageElement; // Cast for TS
+        canvas.width = 1;
+        canvas.height = 1;
+        assets[key] = canvas as unknown as HTMLImageElement;
         checkDone();
       };
     };

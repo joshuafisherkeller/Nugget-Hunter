@@ -352,31 +352,51 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         
         // Shadow
         ctx.shadowColor = 'black';
-        ctx.shadowBlur = 20;
-        ctx.fillStyle = '#f0f0f0';
+        ctx.shadowBlur = 30;
         
-        // Box shape (trapezoid-ish for perspective)
+        // Box shape (Trapezoid for 3D effect)
         ctx.beginPath();
-        ctx.moveTo(boxX + 20, boxY + BOX_HEIGHT);
-        ctx.lineTo(boxX + BOX_WIDTH - 20, boxY + BOX_HEIGHT);
-        ctx.lineTo(boxX + BOX_WIDTH, boxY);
-        ctx.lineTo(boxX, boxY);
+        ctx.moveTo(boxX + 10, boxY); // Top Left
+        ctx.lineTo(boxX + BOX_WIDTH - 10, boxY); // Top Right
+        ctx.lineTo(boxX + BOX_WIDTH, boxY + BOX_HEIGHT); // Bottom Right
+        ctx.lineTo(boxX, boxY + BOX_HEIGHT); // Bottom Left
         ctx.closePath();
+        
+        // Cardboard/Wood Gradient
+        const boxGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + BOX_HEIGHT);
+        boxGrad.addColorStop(0, '#d3a87c'); // Light cardboard
+        boxGrad.addColorStop(1, '#a07a53'); // Darker bottom
+        ctx.fillStyle = boxGrad;
         ctx.fill();
+        
+        // Outline
+        ctx.strokeStyle = '#8d6e4b';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
         ctx.shadowBlur = 0;
 
-        // Branding
-        ctx.fillStyle = '#e74c3c'; // Red brand color
-        ctx.fillRect(boxX + 20, boxY + 40, BOX_WIDTH - 40, 60);
+        // Branding Background
+        ctx.fillStyle = '#c0392b'; // Red brand color
+        ctx.beginPath();
+        ctx.rect(boxX + 20, boxY + 50, BOX_WIDTH - 40, 80);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
         
+        // Text
         ctx.fillStyle = 'white';
-        ctx.font = 'bold 30px Arial';
         ctx.textAlign = 'center';
+        
+        ctx.font = 'bold 24px Arial';
         ctx.fillText("Gettin'", width/2, boxY + 80);
         
-        ctx.fillStyle = '#c0392b';
-        ctx.font = 'bold 40px "Press Start 2P"';
-        ctx.fillText("FRUTTY", width/2, boxY + 140);
+        ctx.font = 'bold italic 45px "Press Start 2P", sans-serif';
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        ctx.fillText("FRUTTY", width/2, boxY + 120);
         
         ctx.restore();
     }
@@ -444,10 +464,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         } else {
             // High fidelity fallback drawing
             if (e.type === 'BOSS') {
-                // Giant Golden Nugget Boss
-                ctx.fillStyle = '#FFD700'; // Gold
+                // Giant Golden Nugget Boss with Shading
+                const bossGrad = ctx.createRadialGradient(-10, -10, 20, 0, 0, e.width/1.5);
+                bossGrad.addColorStop(0, '#ffd700'); // Highlight
+                bossGrad.addColorStop(0.5, '#daa520'); // Gold
+                bossGrad.addColorStop(1, '#b8860b'); // Shadow
+                ctx.fillStyle = bossGrad;
+                
                 ctx.beginPath();
-                // Irregular lump shape
                 const r = e.width/2;
                 ctx.moveTo(r, 0);
                 for(let i=0; i<8; i++) {
@@ -481,9 +505,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 ctx.lineWidth = 5;
                 ctx.stroke();
             } else {
-                // Realistic Nugget shape (lumpy) - used for both NUGGET and MINI_NUGGET
-                ctx.fillStyle = '#D4AF37'; // Standard nugget color
-                if (e.type === 'MINI_NUGGET') ctx.fillStyle = '#CD853F'; // Slightly darker for cooked chunks
+                // Realistic Nugget shape (lumpy 3D)
+                // Gradient for roundness
+                const nuggetGrad = ctx.createRadialGradient(-5, -5, 5, 0, 0, e.width/2);
+                nuggetGrad.addColorStop(0, '#e1c699'); // Highlight (Breading light)
+                nuggetGrad.addColorStop(0.4, '#d4af37'); // Golden
+                nuggetGrad.addColorStop(1, '#aa8830'); // Darker crisp
+                
+                if (e.type === 'MINI_NUGGET') {
+                     // Slightly redder/darker for cooked chunks
+                     nuggetGrad.addColorStop(0, '#e6cdac'); 
+                     nuggetGrad.addColorStop(1, '#a0522d');
+                }
+                
+                ctx.fillStyle = nuggetGrad;
 
                 ctx.beginPath();
                 const r = e.width/2;
@@ -496,14 +531,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 ctx.closePath();
                 ctx.fill();
                 
-                // Texture details (craters/breading)
-                ctx.fillStyle = 'rgba(0,0,0,0.15)';
-                ctx.beginPath();
-                ctx.arc(-e.width/4, -e.width/4, e.width/8, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(e.width/3, e.width/5, e.width/10, 0, Math.PI*2);
-                ctx.fill();
+                // Texture details (pepper flakes / breading shadow)
+                ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
+                for(let i=0; i<3; i++) {
+                    ctx.beginPath();
+                    const tx = (Math.random() - 0.5) * e.width * 0.6;
+                    const ty = (Math.random() - 0.5) * e.height * 0.6;
+                    ctx.arc(tx, ty, 2, 0, Math.PI*2);
+                    ctx.fill();
+                }
             }
         }
         ctx.restore();
@@ -524,19 +560,32 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         } else {
             // Draw realistic fruit fallback
             if (p.type === ProjectileType.APPLE) {
-                ctx.fillStyle = '#2ecc71';
+                ctx.fillStyle = '#e74c3c'; // Red Apple
                 ctx.beginPath();
                 ctx.arc(0, 0, p.width/2, 0, Math.PI * 2);
                 ctx.fill();
+                
+                // Shine
+                ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                ctx.beginPath();
+                ctx.arc(-5, -5, 5, 0, Math.PI*2);
+                ctx.fill();
+
                 // Leaf
-                ctx.fillStyle = 'green';
+                ctx.fillStyle = '#2ecc71';
                 ctx.beginPath();
                 ctx.ellipse(0, -15, 5, 10, Math.PI/4, 0, Math.PI*2);
                 ctx.fill();
             } else {
+                // Banana
                 ctx.fillStyle = '#f1c40f';
                 ctx.beginPath();
                 ctx.ellipse(0, 0, p.width/2, p.height/4, 0, 0, Math.PI*2);
+                ctx.fill();
+                // Ends
+                ctx.fillStyle = '#7f8c8d';
+                ctx.beginPath();
+                ctx.arc(-p.width/2, 0, 3, 0, Math.PI*2);
                 ctx.fill();
             }
         }
