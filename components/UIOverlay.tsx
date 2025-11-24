@@ -7,6 +7,7 @@ interface UIOverlayProps {
   gameState: GameState;
   score: number;
   bossHp: number;
+  timeLeft: number;
   assets: GameAssets | null;
   onStart: () => void;
   onRestart: () => void;
@@ -16,6 +17,7 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
   gameState, 
   score, 
   bossHp, 
+  timeLeft,
   assets, 
   onStart,
   onRestart 
@@ -40,19 +42,28 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
         )}
       </div>
 
-      {/* HUD - Score (Modern Badge) */}
+      {/* HUD - Score & Timer */}
       {(gameState === GameState.PLAYING || gameState === GameState.BOSS_FIGHT) && (
-        <div className="absolute top-6 right-6 bg-white/10 backdrop-blur-md border border-white/20 p-3 rounded-xl text-white font-bold shadow-xl">
-          <div className="text-xs text-gray-300 uppercase">Score</div>
-          <div className="text-2xl text-yellow-400">{score}</div>
-        </div>
+        <>
+          <div className="absolute top-6 right-6 bg-white/10 backdrop-blur-md border border-white/20 p-3 rounded-xl text-white font-bold shadow-xl">
+            <div className="text-xs text-gray-300 uppercase">Score</div>
+            <div className="text-2xl text-yellow-400">{score}</div>
+          </div>
+
+          {gameState === GameState.PLAYING && (
+             <div className={`absolute top-6 left-6 bg-white/10 backdrop-blur-md border border-white/20 p-3 rounded-xl font-bold shadow-xl transition-colors duration-300 ${timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+              <div className="text-xs text-gray-300 uppercase">Time</div>
+              <div className="text-2xl">{timeLeft}s</div>
+            </div>
+          )}
+        </>
       )}
 
       {/* HUD - Boss Health */}
       {gameState === GameState.BOSS_FIGHT && (
         <div className="absolute top-28 left-1/2 -translate-x-1/2 w-80">
           <div className="flex justify-between text-white text-xs font-bold mb-1 px-1">
-            <span>THE BOSS</span>
+            <span>MEGA PIERRE</span>
             <span>{(bossHp/BOSS_HITS_REQUIRED*100).toFixed(0)}%</span>
           </div>
           <div className="h-4 bg-gray-900 rounded-full border border-gray-600 overflow-hidden relative shadow-lg">
@@ -69,14 +80,19 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
       {/* Start Screen */}
       {gameState === GameState.START && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm pointer-events-auto z-50">
-          <div className="bg-gray-900/90 p-8 rounded-2xl border border-gray-700 shadow-2xl flex flex-col items-center max-w-sm mx-4">
+          <div className="bg-gray-900/90 p-8 rounded-2xl border border-gray-700 shadow-2xl flex flex-col items-center max-w-md mx-4 text-center">
               <h1 className="text-4xl font-black text-white mb-2 text-center uppercase italic">Nugget Hunt</h1>
               <div className="h-1 w-20 bg-red-500 rounded mb-6"></div>
               
-              <p className="text-gray-300 mb-8 text-center leading-relaxed">
-                The box is open.<br/>
-                The nuggets are flying.<br/>
-                <strong>Aim carefully.</strong>
+              <p className="text-gray-300 mb-6 text-center leading-relaxed font-medium">
+                Welcome to nugget hunt! Get dem nuggets!<br/>
+                <span className="text-sm text-gray-400 mt-2 block">
+                  Use your crossbow armed with digital bananas and apples to defeat the Mega Pierre nugget.
+                </span>
+              </p>
+
+              <p className="text-red-400 font-bold mb-8 uppercase text-sm tracking-widest border border-red-900/50 bg-red-900/20 p-2 rounded">
+                Destroy all the nuggets in 30 seconds or you will die.
               </p>
 
               <button 
@@ -93,17 +109,37 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
       {/* Boss Intro */}
       {gameState === GameState.BOSS_INTRO && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/40 z-40">
-          <div className="transform rotate-[-5deg] bg-red-600 text-white p-6 border-4 border-white shadow-2xl animate-bounce">
-            <h1 className="text-5xl font-black uppercase tracking-tighter">BOSS INCOMING</h1>
+          <div className="transform rotate-[-5deg] bg-red-600 text-white p-6 border-4 border-white shadow-2xl animate-bounce max-w-2xl">
+            <h1 className="text-3xl md:text-5xl font-black uppercase tracking-tighter text-center leading-tight">
+              MEGA PIERRE<br/>FACE NUGGET INCOMING
+            </h1>
           </div>
         </div>
+      )}
+
+      {/* Game Over Screen */}
+      {gameState === GameState.GAME_OVER && (
+         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 pointer-events-auto z-50 animate-fade-in">
+             <h1 className="text-6xl md:text-8xl font-black text-red-700 tracking-tighter mb-4 drop-shadow-[0_0_25px_rgba(185,28,28,0.8)]">
+                 YOU DIED
+             </h1>
+             <p className="text-gray-400 mb-8 text-xl">The nuggets overwhelmed you.</p>
+             <button 
+              onClick={onRestart}
+              className="px-10 py-3 bg-white text-black font-bold text-lg rounded-full hover:bg-gray-200 transition-colors shadow-lg uppercase"
+            >
+              Try Again
+            </button>
+         </div>
       )}
 
       {/* Win Screen */}
       {gameState === GameState.WON && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 backdrop-blur-md pointer-events-auto z-50">
-          <div className="flex flex-col items-center animate-fade-in-up">
-            <h2 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 to-yellow-600 mb-8 drop-shadow-sm">VICTORY</h2>
+          <div className="flex flex-col items-center animate-fade-in-up p-4 text-center">
+            <h2 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-red-500 to-red-800 mb-8 drop-shadow-sm uppercase">
+              Defeat! You will never win!
+            </h2>
             
             {assets?.ribbon && assets.ribbon.width > 50 ? (
                <img src={assets.ribbon.src} alt="15 Minute Apple" className="max-w-[90%] md:max-w-md mb-8 drop-shadow-[0_0_15px_rgba(255,215,0,0.5)]" />
@@ -117,7 +153,7 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
               onClick={onRestart}
               className="mt-4 px-10 py-3 bg-white text-black font-bold text-lg rounded-full hover:bg-gray-200 transition-colors shadow-lg"
             >
-              Play Again
+              Try my luck again
             </button>
           </div>
         </div>

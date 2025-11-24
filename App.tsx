@@ -9,6 +9,7 @@ const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.START);
   const [score, setScore] = useState(0);
   const [bossHp, setBossHp] = useState(BOSS_HITS_REQUIRED);
+  const [timeLeft, setTimeLeft] = useState(30);
   const [assets, setAssets] = useState<GameAssets | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,6 +23,7 @@ const App: React.FC = () => {
   const handleStart = () => {
     setGameState(GameState.PLAYING);
     setScore(0);
+    setTimeLeft(30);
   };
 
   const handleRestart = () => {
@@ -46,12 +48,14 @@ const App: React.FC = () => {
         setGameState={setGameState}
         setScore={setScore}
         setBossHp={setBossHp}
+        setTimeLeft={setTimeLeft}
       />
       
       <UIOverlay 
         gameState={gameState}
         score={score}
         bossHp={bossHp}
+        timeLeft={timeLeft}
         assets={assets}
         onStart={handleStart}
         onRestart={handleRestart}

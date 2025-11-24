@@ -24,7 +24,8 @@ import {
   BOX_WIDTH,
   BOX_HEIGHT,
   PROJECTILE_SIZE,
-  TOTAL_NUGGETS_LEVEL_1
+  TOTAL_NUGGETS_LEVEL_1,
+  LEVEL_DURATION_MS
 } from '../constants';
 import { playSound } from '../services/audioService';
 
@@ -34,6 +35,7 @@ interface GameCanvasProps {
   setGameState: (state: GameState) => void;
   setScore: (score: number) => void;
   setBossHp: (hp: number) => void;
+  setTimeLeft: (time: number) => void;
 }
 
 const GameCanvas: React.FC<GameCanvasProps> = ({ 
@@ -41,7 +43,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   gameState, 
   setGameState, 
   setScore,
-  setBossHp 
+  setBossHp,
+  setTimeLeft
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -57,6 +60,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const bossEntity = useRef<Enemy | null>(null);
   const currentAmmo = useRef<ProjectileType>(ProjectileType.APPLE);
   
+  // Timer Refs
+  const levelStartTime = useRef(0);
+  const lastTimeLeftUpdate = useRef(30);
+  
   const mousePos = useRef({ x: 0, y: 0 });
 
   const initGame = useCallback(() => {
@@ -67,9 +74,19 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     spawnedNuggets.current = 0;
     bossEntity.current = null;
     lastSpawnTime.current = 0;
+    lastTimeLeftUpdate.current = 30;
     setScore(0);
     setBossHp(BOSS_HITS_REQUIRED);
-  }, [setScore, setBossHp]);
+    setTimeLeft(30);
+  }, [setScore, setBossHp, setTimeLeft]);
+
+  // Capture level start time when switching to PLAYING
+  useEffect(() => {
+    if (gameState === GameState.PLAYING) {
+        levelStartTime.current = performance.now();
+        lastTimeLeftUpdate.current = Math.floor(LEVEL_DURATION_MS / 1000);
+    }
+  }, [gameState]);
 
   // Use Window dimensions directly to avoid container collapse issues
   const [dimensions, setDimensions] = useState({ w: window.innerWidth, h: window.innerHeight });
@@ -82,7 +99,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       });
     };
     window.addEventListener('resize', handleResize);
-    // Force initial resize to catch any loading shifts
     handleResize();
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -188,6 +204,26 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   };
 
   const update = useCallback((timestamp: number, width: number, height: number) => {
+    // Timer Logic (Only in PLAYING mode)
+    if (gameState === GameState.PLAYING) {
+        const elapsed = timestamp - levelStartTime.current;
+        const remaining = Math.max(0, LEVEL_DURATION_MS - elapsed);
+        const remainingSeconds = Math.ceil(remaining / 1000);
+
+        if (remainingSeconds !== lastTimeLeftUpdate.current) {
+            setTimeLeft(remainingSeconds);
+            lastTimeLeftUpdate.current = remainingSeconds;
+        }
+
+        if (remaining <= 0) {
+             // Time expired! Check if nuggets remain
+             if (enemies.current.length > 0 || spawnedNuggets.current < TOTAL_NUGGETS_LEVEL_1) {
+                 setGameState(GameState.GAME_OVER);
+                 playSound('HIT');
+             }
+        }
+    }
+
     // Win Condition Check
     if (gameState === GameState.BOSS_FIGHT && !bossEntity.current && enemies.current.length === 0) {
         setGameState(GameState.WON);
@@ -329,7 +365,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     spawnNugget(timestamp, width, height);
 
-  }, [gameState, setGameState, setScore, setBossHp]);
+  }, [gameState, setGameState, setScore, setBossHp, setTimeLeft]);
 
   const draw = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number) => {
     // Realistic Background

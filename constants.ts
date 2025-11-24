@@ -8,8 +8,9 @@ export const ENEMY_LAUNCH_SPEED_MIN = 12;
 export const ENEMY_LAUNCH_SPEED_MAX = 18;
 export const BOSS_SPEED = 5;
 export const BOSS_HITS_REQUIRED = 15;
-export const SPAWN_RATE_MS = 2000; // 2 seconds
+export const SPAWN_RATE_MS = 250; // 0.25 seconds - Fast spawn!
 export const TOTAL_NUGGETS_LEVEL_1 = 15;
+export const LEVEL_DURATION_MS = 30000; // 30 Seconds
 
 // Dimensions
 export const PLAYER_SIZE = 80;
