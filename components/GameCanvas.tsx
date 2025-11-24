@@ -486,10 +486,36 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.translate(e.x, e.y);
         ctx.rotate(e.rotation);
         
-        // Drop shadow for depth
+        // Default Drop shadow
         ctx.shadowColor = 'rgba(0,0,0,0.5)';
         ctx.shadowBlur = 10;
         ctx.shadowOffsetY = 10;
+
+        // Boss Interaction Highlight
+        if (e.type === 'BOSS') {
+            let dangerIntensity = 0;
+            // Check for incoming projectiles to create anticipation glow
+            projectiles.current.forEach(p => {
+                if (p.isDead) return;
+                const dx = p.x - e.x;
+                const dy = p.y - e.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                const warningDist = e.width / 2 + 200; // Warning radius
+                
+                if (dist < warningDist) {
+                    // Intensity 0 to 1 based on proximity
+                    const intensity = 1 - (dist / warningDist);
+                    if (intensity > dangerIntensity) dangerIntensity = intensity;
+                }
+            });
+
+            if (dangerIntensity > 0) {
+                // Add reddish-gold glow that intensifies
+                ctx.shadowColor = `rgba(255, 60, 0, ${0.4 + dangerIntensity * 0.6})`;
+                ctx.shadowBlur = 20 + (dangerIntensity * 40);
+                ctx.shadowOffsetY = 0;
+            }
+        }
 
         if (e.type === 'BOSS' && assets?.boss && assets.boss.width >= 50) {
              // If boss asset loaded
